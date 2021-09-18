@@ -16,4 +16,8 @@ path = "tests/progress.rs"
 trybuild = { version = "1.0", features = ["diff"] }
 
 [dependencies]
-syn = "*"
+proc-macro2 = { version = "1.0" }
+# for personal ast parse
+syn = { version = "1.0", features = ["extra-traits"] }
+# for parse the syn ast to std Token
+quote = { version = "1.0" }

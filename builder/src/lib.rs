@@ -59,9 +59,25 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         }
     });
 
+    let builder_setter = fields.iter().map(|f| {
+        let ident = &f.ident;
+        let ty = &f.ty;
+
+        quote! {
+            fn #ident(&mut self, #ident: #ty) -> &mut Self {
+                self.#ident = std::option::Option::Some(#ident);
+                self
+            }
+        }
+    });
+
     let ret = quote!{
         pub struct #builder_name_ident {
             #(#builder_fields)*
+        }
+
+        impl #builder_name_ident {
+            #(#builder_setter)*
         }
 
         impl #struct_ident {

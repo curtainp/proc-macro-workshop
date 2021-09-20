@@ -71,6 +71,14 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         }
     });
 
+    let builder_build = fields.iter().map(|f| {
+        let ident = &f.ident;
+
+        quote! {
+            #ident: self.#ident.as_ref().ok_or("missing".to_string())?.clone(),
+        }
+    });
+
     let ret = quote!{
         pub struct #builder_name_ident {
             #(#builder_fields)*
@@ -78,6 +86,12 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
 
         impl #builder_name_ident {
             #(#builder_setter)*
+
+            pub fn build(&mut self) -> std::result::Result<#struct_ident, std::boxed::Box<dyn std::error::Error>> {
+                std::result::Result::<_,_>::Ok(#struct_ident{
+                    #(#builder_build)*
+                })
+            }
         }
 
         impl #struct_ident {

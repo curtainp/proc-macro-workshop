@@ -1,8 +1,77 @@
 use proc_macro::TokenStream;
 use syn;
+use syn::spanned::Spanned;
+use quote::quote;
 
 #[proc_macro_derive(Builder)]
 pub fn derive(input: TokenStream) -> TokenStream {
-    let _st = syn::parse_macro_input!(input as syn::DeriveInput);
-    TokenStream::new()
+    let st = syn::parse_macro_input!(input as syn::DeriveInput);
+
+    match do_expand(&st) {
+        Ok(token) => token.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+// type StructFields = syn::punctuated::Punctuated<syn::Fields, syn::token![,]>;
+
+fn get_fields_from_derive_input(st: &syn::DeriveInput) -> syn::Result<&syn::Fields> {
+    // if let syn::Data::Struct(syn::DataStruct{
+    //     fields: syn::Fields::Named(
+    //         syn::FieldsNamed{ ref named,
+    //         ..}),
+    //     .. }) = st.data {
+    //     return Ok(named)
+    // };
+
+    match st.data {
+        syn::Data::Struct(ref data) => return Ok(&data.fields),
+        _ => {
+            return Err(syn::Error::new_spanned(st, "Must define struct".to_string()))
+        }
+    };
+}
+
+
+fn do_expand(st: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
+    // eprint!("{:#?}", st.data);
+    let builder_name_literal = format!("{}Builder", st.ident.to_string());
+    let builder_name_ident = syn::Ident::new(&builder_name_literal, st.span());
+
+    // 在模版代码中不能使用`.`语法获取ident
+    let struct_ident = &st.ident;
+    let fields = get_fields_from_derive_input(st)?;
+
+    let builder_fields = fields.iter().map(|f| {
+        let ident = &f.ident;
+        let ty = &f.ty;
+
+        quote! {
+            #ident: std::option::Option<#ty>,
+        }
+    });
+
+    let builder_init = fields.iter().map(|f| {
+        let ident = &f.ident;
+
+        quote! {
+            #ident: std::option::Option::None,
+        }
+    });
+
+    let ret = quote!{
+        pub struct #builder_name_ident {
+            #(#builder_fields)*
+        }
+
+        impl #struct_ident {
+            pub fn builder() -> #builder_name_ident {
+                #builder_name_ident {
+                    #(#builder_init)*
+                }
+            }
+        }
+    };
+
+    Ok(ret)
 }

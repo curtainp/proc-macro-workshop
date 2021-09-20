@@ -13,9 +13,9 @@ pub fn derive(input: TokenStream) -> TokenStream {
     }
 }
 
-// type StructFields = syn::punctuated::Punctuated<syn::Fields, syn::token![,]>;
 
 fn get_fields_from_derive_input(st: &syn::DeriveInput) -> syn::Result<&syn::Fields> {
+    // 不用解析到这么深的层次--因为syn::Fields的iter()方法底层会自己解析并调用对应得syn::FieldsNamed的iter()
     // if let syn::Data::Struct(syn::DataStruct{
     //     fields: syn::Fields::Named(
     //         syn::FieldsNamed{ ref named,

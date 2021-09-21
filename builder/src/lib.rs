@@ -27,7 +27,7 @@ fn get_fields_from_derive_input(st: &syn::DeriveInput) -> syn::Result<&syn::Fiel
     match st.data {
         syn::Data::Struct(ref data) => return Ok(&data.fields),
         _ => {
-            return Err(syn::Error::new_spanned(st, "Must define struct".to_string()))
+            return Err(syn::Error::new_spanned(st, "Must define struct".to_string()));
         }
     };
 }
@@ -46,8 +46,14 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         let ident = &f.ident;
         let ty = &f.ty;
 
-        quote! {
-            #ident: std::option::Option<#ty>,
+        if get_option_type(ty).is_some() {
+            quote! {
+                #ident: #ty,
+            }
+        } else {
+            quote! {
+                #ident: std::option::Option<#ty>,
+            }
         }
     });
 
@@ -63,23 +69,41 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         let ident = &f.ident;
         let ty = &f.ty;
 
-        quote! {
-            fn #ident(&mut self, #ident: #ty) -> &mut Self {
-                self.#ident = std::option::Option::Some(#ident);
-                self
+        if let Some(gty) = get_option_type(ty) {
+            quote! {
+                fn #ident(&mut self, #ident: #gty) -> &mut Self {
+                    self.#ident = std::option::Option::Some(#ident);
+                    self
+                }
+            }
+        } else {
+            quote! {
+                fn #ident(&mut self, #ident: #ty) -> &mut Self {
+                    self.#ident = std::option::Option::Some(#ident);
+                    self
+                }
             }
         }
     });
 
     let builder_build = fields.iter().map(|f| {
         let ident = &f.ident;
+        let ty = &f.ty;
 
-        quote! {
-            #ident: self.#ident.as_ref().ok_or("missing".to_string())?.clone(),
+        // 原始类型字段为Option<T>类型的 直接clone
+        if get_option_type(ty).is_some() {
+            quote! {
+                #ident: self.#ident.clone(),
+            }
+        } else {
+            // 否则，获取类型Builder的内部类型再clone
+            quote! {
+                #ident: self.#ident.as_ref().ok_or("missing".to_string())?.clone(),
+            }
         }
     });
 
-    let ret = quote!{
+    let ret = quote! {
         pub struct #builder_name_ident {
             #(#builder_fields)*
         }
@@ -104,4 +128,45 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     };
 
     Ok(ret)
+}
+
+fn get_generic_type<'a>(ty: &'a syn::Type, pattern: &'static str) -> Option<&'a syn::Type> {
+    match ty {
+        // 支持相对路径和绝对路径 std::option::Option<T> Option<T> ::std::option::Option<T>
+        syn::Type::Path(path) => {
+            if path.qself.is_some() {
+                return None;
+            }
+
+            // 判断路径上最后一个元素-即类型T紧挨的类型
+            // 用于支持绝对路径
+            let path_seg = path.path.segments.last().unwrap();
+            if path_seg.ident.to_string() != pattern {
+                return None;
+            }
+
+            // 获取<>中的类型参数
+            let ab = match path_seg.arguments {
+                syn::PathArguments::AngleBracketed(ref ab) => ab,
+                _ => return None,
+            };
+
+            if ab.args.len() != 1 {
+                return None;
+            }
+
+            match ab.args.first().unwrap() {
+                syn::GenericArgument::Type(gty) => Some(gty),
+                syn::GenericArgument::Const(_)
+                | syn::GenericArgument::Binding(_)
+                | syn::GenericArgument::Lifetime(_)
+                | syn::GenericArgument::Constraint(_) => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn get_option_type(ty: &syn::Type) -> Option<&syn::Type> {
+    return get_generic_type(ty, "Option");
 }

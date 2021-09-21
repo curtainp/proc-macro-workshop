@@ -1,22 +1,17 @@
-// Some fields may not always need to be specified. Typically these would be
-// represented as Option<T> in the struct being built.
-//
-// Have your macro identify fields in the macro input whose type is Option and
-// make the corresponding builder method optional for the caller. In the test
-// case below, current_dir is optional and not passed to one of the builders in
-// main.
-//
-// Be aware that the Rust compiler performs name resolution only after macro
-// expansion has finished completely. That means during the evaluation of a
-// procedural macro, "types" do not exist yet, only tokens. In general many
-// different token representations may end up referring to the same type: for
-// example `Option<T>` and `std::option::Option<T>` and `<Vec<Option<T>> as
-// IntoIterator>::Item` are all different names for the same type. Conversely,
-// a single token representation may end up referring to many different types in
-// different places; for example the meaning of `Error` will depend on whether
-// the surrounding scope has imported std::error::Error or std::io::Error. As a
-// consequence, it isn't possible in general for a macro to compare two token
-// representations and tell whether they refer to the same type.
+/// 有些字段并不是必须的，可以将该字段的类型定义为std::option::Option<T>类型来处理
+///
+/// 在解析了宏输入中的类型为std::option::Option<T>的标识符之后，需要为这种类型生成对应
+/// 的builder方法，在下面的测试用例中，`current_dir`字段是一个可选项，并不需要在main函
+/// 数中对其进行赋值。
+///
+/// rust编译器会在宏展开之后才进行`name resolution`，这就意味着，在宏展开时，并没有`type`
+/// 的概念，仅仅存在token串，一般情况下，可能会存在多个不同的token指向同一种类型：
+///     std::option::Option<T> Option<T> <Vec<Option<T>> as IntoIterator>::Iterm都是
+///     同一种类型的不同表示
+/// 相反，一个token也可能指向多个不同的类型：
+///     Error的意义依据上下文决定--std::error::Error 或 std::io::Error
+/// 结果就是，在过程宏中，不可能凭借比较两个token来判断他们是否指向同一种类型
+///
 //
 // In the context of the current test case, all of this means that there isn't
 // some compiler representation of Option that our macro can compare fields

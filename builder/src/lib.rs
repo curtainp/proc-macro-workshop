@@ -2,8 +2,9 @@ use proc_macro::TokenStream;
 use syn;
 use syn::spanned::Spanned;
 use quote::quote;
+use std::option::Option::Some;
 
-#[proc_macro_derive(Builder)]
+#[proc_macro_derive(Builder, attributes(builder))]
 pub fn derive(input: TokenStream) -> TokenStream {
     let st = syn::parse_macro_input!(input as syn::DeriveInput);
 
@@ -46,7 +47,7 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         let ident = &f.ident;
         let ty = &f.ty;
 
-        if get_option_type(ty).is_some() {
+        if get_option_type(ty).is_some() || get_fields_attribute_ident(f).is_some() {
             quote! {
                 #ident: #ty,
             }
@@ -60,8 +61,14 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let builder_init = fields.iter().map(|f| {
         let ident = &f.ident;
 
-        quote! {
-            #ident: std::option::Option::None,
+        if get_fields_attribute_ident(f).is_some() {
+            quote! {
+                #ident: std::vec::Vec::new(),
+            }
+        } else {
+            quote! {
+                #ident: std::option::Option::None,
+            }
         }
     });
 
@@ -76,6 +83,25 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                     self
                 }
             }
+        } else if let Some(attr_ident) = get_fields_attribute_ident(f) {
+            let inner_ty = get_generic_type(ty, "Vec").expect("each attribute must be specified with Vec field");
+            let mut tmp = quote! {
+                fn #attr_ident(&mut self, #attr_ident: #inner_ty) -> &mut Self {
+                    self.#ident.push(#attr_ident);
+                    self
+                }
+            };
+            if attr_ident.to_string() != ident.as_ref().unwrap().to_string() {
+                tmp.extend(
+                    quote! {
+                        fn #ident(&mut self, #ident: #ty) -> &mut Self {
+                            self.#ident = #ident.clone();
+                            self
+                        }
+                    }
+                );
+            }
+            return tmp;
         } else {
             quote! {
                 fn #ident(&mut self, #ident: #ty) -> &mut Self {
@@ -91,7 +117,7 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         let ty = &f.ty;
 
         // 原始类型字段为Option<T>类型的 直接clone
-        if get_option_type(ty).is_some() {
+        if get_option_type(ty).is_some() || get_fields_attribute_ident(f).is_some() {
             quote! {
                 #ident: self.#ident.clone(),
             }
@@ -169,4 +195,26 @@ fn get_generic_type<'a>(ty: &'a syn::Type, pattern: &'static str) -> Option<&'a 
 
 fn get_option_type(ty: &syn::Type) -> Option<&syn::Type> {
     return get_generic_type(ty, "Option");
+}
+
+fn get_fields_attribute_ident(field: &syn::Field) -> Option<syn::Ident> {
+    for attr in &field.attrs {
+        if let Ok(syn::Meta::List(outer_meta)) = attr.parse_meta() {
+            if outer_meta.path.segments.first().unwrap().ident == "builder" {
+                if let syn::NestedMeta::Meta(syn::Meta::NameValue(meta_kv)) =
+                    outer_meta.nested.first().unwrap()
+                {
+                    if meta_kv.path.segments.first().unwrap().ident == "each" {
+                        if let syn::Lit::Str(ref lit) = meta_kv.lit {
+                            return Some(syn::Ident::new(
+                                lit.value().as_str(),
+                                attr.span(),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
 }

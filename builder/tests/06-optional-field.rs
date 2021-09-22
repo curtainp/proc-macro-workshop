@@ -12,40 +12,38 @@
 ///     Error的意义依据上下文决定--std::error::Error 或 std::io::Error
 /// 结果就是，在过程宏中，不可能凭借比较两个token来判断他们是否指向同一种类型
 ///
-//
-// In the context of the current test case, all of this means that there isn't
-// some compiler representation of Option that our macro can compare fields
-// against to find out whether they refer to the eventual Option type after name
-// resolution. Instead all we get to look at are the tokens of how the user has
-// described the type in their code. By necessity, the macro will look for
-// fields whose type is written literally as Option<...> and will not realize
-// when the same type has been written in some different way.
-//
-// The syntax tree for types parsed from tokens is somewhat complicated because
-// there is such a large variety of type syntax in Rust, so here is the nested
-// data structure representation that your macro will want to identify:
-//
-//     Type::Path(
-//         TypePath {
-//             qself: None,
-//             path: Path {
-//                 segments: [
-//                     PathSegment {
-//                         ident: "Option",
-//                         arguments: PathArguments::AngleBracketed(
-//                             AngleBracketedGenericArguments {
-//                                 args: [
-//                                     GenericArgument::Type(
-//                                         ...
-//                                     ),
-//                                 ],
-//                             },
-//                         ),
-//                     },
-//                 ],
-//             },
-//         },
-//     )
+/// 在词法分析阶段，编译器的上下文中无法识别类型的别名(因为还没有进行name resolution)
+/// 所以我们仅仅只需识别Option类型即可
+/// ```
+///     use std::str::String;
+///     use std::str::String as MyString;
+///
+///     assert!(TypeId::of::<MyString>() == TypeId::of::<std::str::String>());
+/// ```
+///
+/// ```
+///     Type::Path(
+///         TypePath {
+///             qself: None,
+///             path: Path {
+///                 segments: [
+///                     PathSegment {
+///                         ident: "Option",
+///                         arguments: PathArguments::AngleBracketed(
+///                             AngleBracketedGenericArguments {
+///                                 args: [
+///                                     GenericArgument::Type(
+///                                         ...
+///                                     ),
+///                                 ],
+///                             },
+///                         ),
+///                     },
+///                 ],
+///             },
+///         },
+///     )
+/// ```
 
 use derive_builder::Builder;
 

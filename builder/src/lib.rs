@@ -43,47 +43,49 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let struct_ident = &st.ident;
     let fields = get_fields_from_derive_input(st)?;
 
-    let builder_fields = fields.iter().map(|f| {
+    let builder_fields: syn::Result<Vec<_>> = fields.iter().map(|f| {
         let ident = &f.ident;
         let ty = &f.ty;
 
-        if get_option_type(ty).is_some() || get_fields_attribute_ident(f).is_some() {
-            quote! {
+        if get_option_type(ty).is_some() || get_fields_attribute_ident(f)?.is_some() {
+            Ok(quote! {
                 #ident: #ty,
-            }
+            })
         } else {
-            quote! {
+            Ok(quote! {
                 #ident: std::option::Option<#ty>,
-            }
+            })
         }
-    });
+    }).collect();
+    let builder_fields = builder_fields?;
 
-    let builder_init = fields.iter().map(|f| {
+    let builder_init: syn::Result<Vec<_>> = fields.iter().map(|f| {
         let ident = &f.ident;
 
-        if get_fields_attribute_ident(f).is_some() {
-            quote! {
+        if get_fields_attribute_ident(f)?.is_some() {
+            Ok(quote! {
                 #ident: std::vec::Vec::new(),
-            }
+            })
         } else {
-            quote! {
+            Ok(quote! {
                 #ident: std::option::Option::None,
-            }
+            })
         }
-    });
+    }).collect();
+    let builder_init = builder_init?;
 
-    let builder_setter = fields.iter().map(|f| {
+    let builder_setter: syn::Result<Vec<_>> = fields.iter().map(|f| {
         let ident = &f.ident;
         let ty = &f.ty;
 
         if let Some(gty) = get_option_type(ty) {
-            quote! {
+            Ok(quote! {
                 fn #ident(&mut self, #ident: #gty) -> &mut Self {
                     self.#ident = std::option::Option::Some(#ident);
                     self
                 }
-            }
-        } else if let Some(attr_ident) = get_fields_attribute_ident(f) {
+            })
+        } else if let Some(attr_ident) = get_fields_attribute_ident(f)? {
             let inner_ty = get_generic_type(ty, "Vec").expect("each attribute must be specified with Vec field");
             let mut tmp = quote! {
                 fn #attr_ident(&mut self, #attr_ident: #inner_ty) -> &mut Self {
@@ -101,33 +103,35 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                     }
                 );
             }
-            return tmp;
+            return Ok(tmp);
         } else {
-            quote! {
+            Ok(quote! {
                 fn #ident(&mut self, #ident: #ty) -> &mut Self {
                     self.#ident = std::option::Option::Some(#ident);
                     self
                 }
-            }
+            })
         }
-    });
+    }).collect();
+    let builder_setter = builder_setter?;
 
-    let builder_build = fields.iter().map(|f| {
+    let builder_build: syn::Result<Vec<_>> = fields.iter().map(|f| {
         let ident = &f.ident;
         let ty = &f.ty;
 
         // 原始类型字段为Option<T>类型的 直接clone
-        if get_option_type(ty).is_some() || get_fields_attribute_ident(f).is_some() {
-            quote! {
+        if get_option_type(ty).is_some() || get_fields_attribute_ident(f)?.is_some() {
+            Ok(quote! {
                 #ident: self.#ident.clone(),
-            }
+            })
         } else {
             // 否则，获取类型Builder的内部类型再clone
-            quote! {
+            Ok(quote! {
                 #ident: self.#ident.as_ref().ok_or("missing".to_string())?.clone(),
-            }
+            })
         }
-    });
+    }).collect();
+    let builder_build = builder_build?;
 
     let ret = quote! {
         pub struct #builder_name_ident {
@@ -197,24 +201,26 @@ fn get_option_type(ty: &syn::Type) -> Option<&syn::Type> {
     return get_generic_type(ty, "Option");
 }
 
-fn get_fields_attribute_ident(field: &syn::Field) -> Option<syn::Ident> {
+fn get_fields_attribute_ident(field: &syn::Field) -> syn::Result<Option<syn::Ident>> {
     for attr in &field.attrs {
-        if let Ok(syn::Meta::List(outer_meta)) = attr.parse_meta() {
+        if let Ok(syn::Meta::List(ref outer_meta)) = attr.parse_meta() {
             if outer_meta.path.segments.first().unwrap().ident == "builder" {
                 if let syn::NestedMeta::Meta(syn::Meta::NameValue(meta_kv)) =
-                    outer_meta.nested.first().unwrap()
+                outer_meta.nested.first().unwrap()
                 {
                     if meta_kv.path.segments.first().unwrap().ident == "each" {
                         if let syn::Lit::Str(ref lit) = meta_kv.lit {
-                            return Some(syn::Ident::new(
+                            return Ok(Some(syn::Ident::new(
                                 lit.value().as_str(),
                                 attr.span(),
-                            ));
+                            )));
                         }
+                    } else {
+                        return Err(syn::Error::new_spanned(outer_meta, r#"expected `builder(each = "...")`"#));
                     }
                 }
             }
         }
     }
-    None
+    Ok(None)
 }
